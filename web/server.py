@@ -312,7 +312,8 @@ class Handler(BaseHTTPRequestHandler):
             cfg = load_config()
             if verify_pin(body.get("pin", ""), cfg):
                 token = secrets.token_hex(24)
-                cfg["tokens"].append(token)
+                # STRICT 1 device: device baru gantiin yang lama (yang lama ke-logout).
+                cfg["tokens"] = [token]
                 save_config(cfg)
                 return self._send_json({"ok": True, "token": token})
             return self._send_json({"ok": False, "error": "PIN salah"}, 403)
