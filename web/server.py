@@ -13,6 +13,7 @@ Actions:
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import secrets
@@ -269,6 +270,15 @@ class Handler(BaseHTTPRequestHandler):
     def _token(self):
         return self.headers.get("X-Token", "")
 
+    def _client_is_local(self):
+        # Cuma izinin koneksi dari LAN/private/loopback. Blok internet & sumber asing
+        # walau port ke-expose lewat VPN/misconfig.
+        try:
+            ip = ipaddress.ip_address(self.client_address[0])
+            return ip.is_loopback or ip.is_private or ip.is_link_local
+        except Exception:
+            return False
+
     def _body_json(self):
         length = int(self.headers.get("Content-Length", 0))
         if length == 0:
@@ -279,6 +289,8 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     def do_GET(self):
+        if not self._client_is_local():
+            return self._send_error_code(403)
         path = self.path.split("?")[0]
         if path == "/api/status":
             if not token_valid(self._token()):
@@ -300,6 +312,8 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_file(candidate)
 
     def do_POST(self):
+        if not self._client_is_local():
+            return self._send_error_code(403)
         path = self.path.split("?")[0]
         body = self._body_json()
 
