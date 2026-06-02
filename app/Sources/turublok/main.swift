@@ -1,13 +1,18 @@
 import AppKit
+import ApplicationServices
 import Foundation
 
 enum Mode {
     case lock
     case fatigueLock
+    case forceLock
     case watchEyes
     case debugEyes
     case test(durationSeconds: Int)
     case status
+    case snooze
+    case clearSnooze
+    case checkAccessibility
 }
 
 func parseArgs() -> Mode {
@@ -21,6 +26,8 @@ func parseArgs() -> Mode {
             mode = .lock
         case "--fatigue-lock":
             mode = .fatigueLock
+        case "--force-lock":
+            mode = .forceLock
         case "--watch-eyes":
             mode = .watchEyes
         case "--debug-eyes":
@@ -30,6 +37,12 @@ func parseArgs() -> Mode {
             mode = .test(durationSeconds: Int(next) ?? 30)
         case "--status":
             mode = .status
+        case "--snooze":
+            mode = .snooze
+        case "--clear-snooze":
+            mode = .clearSnooze
+        case "--check-accessibility":
+            mode = .checkAccessibility
         default:
             FileHandle.standardError.write(Data("unknown arg: \(arg)\n".utf8))
         }
@@ -54,6 +67,11 @@ func printStatus() {
     }
     let skipState = SkipStateStore.load()
     print("next fatigue trigger: \(skipState.nextSkippable ? "SKIPPABLE (tahan ESC 3 detik)" : "FORCED (ga bisa skip)")")
+    if let until = PauseControl.pausedUntil(), PauseControl.isPaused(now: now) {
+        print("PAUSED until:         \(until)  ← lock OFF sampai waktu ini")
+    } else {
+        print("paused:               no (lock aktif sesuai jadwal)")
+    }
 }
 
 func spawnFatigueLock() {
@@ -93,6 +111,10 @@ case .lock:
         Log.info("another turublok already running, exiting cleanly")
         exit(0)
     }
+    if PauseControl.isPaused(now: Date()) {
+        Log.info("snoozed — bedtime lock skipped, exiting cleanly")
+        exit(0)
+    }
     let cfg = LockConfig.current()
     let now = Date()
     guard cfg.isWithinLockWindow(now) else {
@@ -113,6 +135,10 @@ case .fatigueLock:
         Log.info("another lock instance running, fatigue-lock skipped")
         exit(0)
     }
+    if PauseControl.isPaused(now: Date()) {
+        Log.info("snoozed — fatigue lock skipped, exiting cleanly")
+        exit(0)
+    }
     Sentinel.acquirePidfile()
     atexit { Sentinel.releasePidfile() }
     let skipState = SkipStateStore.load()
@@ -120,6 +146,21 @@ case .fatigueLock:
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     let controller = LockController(mode: .fatigue(durationSeconds: 600, skippable: skipState.nextSkippable))
+    controller.start()
+    app.run()
+
+case .forceLock:
+    // Dipicu istri dari HP. Override window + snooze (wife's lock-now menang dari apa pun).
+    if Sentinel.anotherInstanceRunning() {
+        Log.info("another lock instance running, force-lock skipped")
+        exit(0)
+    }
+    Sentinel.acquirePidfile()
+    atexit { Sentinel.releasePidfile() }
+    Log.info("starting FORCE-LOCK (dipicu dari HP istri)")
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let controller = LockController(mode: .force)
     controller.start()
     app.run()
 
@@ -140,4 +181,34 @@ case .debugEyes:
     app.setActivationPolicy(.accessory)
     let debug = EyeDebug()
     debug.runAndExit()
+
+case .snooze:
+    // Pause sampai window bedtime BERIKUTNYA (besok 23:00). Hari ini libur.
+    let cfg = LockConfig.current()
+    let now = Date()
+    let nextStart = cfg.nextStartDate(from: now)
+    PauseControl.setPause(until: nextStart)
+    // Clear lock state yang lagi aktif biar ga resume.
+    let support = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/turublok", isDirectory: true)
+    try? FileManager.default.removeItem(at: support.appendingPathComponent("state.json"))
+    print("Snoozed. Lock OFF sampai \(nextStart).")
+    print("Service otomatis aktif lagi di window berikutnya.")
+    exit(0)
+
+case .clearSnooze:
+    PauseControl.clear()
+    print("Snooze dibatalkan. Lock aktif sesuai jadwal normal.")
+    exit(0)
+
+case .checkAccessibility:
+    // Cek apakah app punya Accessibility permission, TANPA munculin lock/kucing.
+    let trusted = AXIsProcessTrusted()
+    print("AXIsProcessTrusted: \(trusted ? "✅ YES — keyboard blocking AKAN jalan" : "❌ NO — permission belum di-grant")")
+    if !trusted {
+        print("")
+        print("Fix: System Settings → Privacy & Security → Accessibility")
+        print("     → add /Users/\(NSUserName())/Applications/Turublok.app → toggle ON")
+    }
+    exit(trusted ? 0 : 1)
 }

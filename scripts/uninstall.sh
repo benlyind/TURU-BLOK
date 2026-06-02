@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOCK_PLIST="$HOME/Library/LaunchAgents/com.turublok.lock.plist"
-EYES_PLIST="$HOME/Library/LaunchAgents/com.turublok.eyes.plist"
+PLISTS=(
+    "$HOME/Library/LaunchAgents/com.turublok.lock.plist"
+    "$HOME/Library/LaunchAgents/com.turublok.eyes.plist"
+    "$HOME/Library/LaunchAgents/com.turublok.forcelock.plist"
+    "$HOME/Library/LaunchAgents/com.turublok.web.plist"
+)
 APP_DIR="$HOME/Applications/Turublok.app"
 CLI_LINK="$HOME/.local/bin/turublok"
 STATE_DIR="$HOME/Library/Application Support/turublok"
 
 echo "==> Unload launchd agents"
-launchctl unload "$LOCK_PLIST" 2>/dev/null || true
-launchctl unload "$EYES_PLIST" 2>/dev/null || true
+for plist in "${PLISTS[@]}"; do
+    launchctl unload "$plist" 2>/dev/null || true
+done
 
 echo "==> Remove plists"
-rm -f "$LOCK_PLIST" "$EYES_PLIST"
+rm -f "${PLISTS[@]}"
 
 echo "==> Remove app bundle"
 rm -rf "$APP_DIR"

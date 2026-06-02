@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.turublok.forcelock</string>
+
+    <!-- On-demand: dipicu istri via `launchctl kickstart` dari control server.
+         Karena di-launch launchd, TCC context BENAR → keyboard blocking jalan. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>__BINARY_PATH__</string>
+        <string>--force-lock</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Projects/TURU-BLOK/logs/forcelock.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Projects/TURU-BLOK/logs/forcelock.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TZ</key>
+        <string>Asia/Jakarta</string>
+    </dict>
+</dict>
+</plist>

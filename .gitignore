@@ -15,8 +15,9 @@ logs/*.log
 .DS_Store
 *.swp
 
-# Screenshots
+# Screenshots (tapi icon PWA tetap di-commit)
 *.png
+!web/public/*.png
 
 # Xcode
 *.xcodeproj/

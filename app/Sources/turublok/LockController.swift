@@ -5,18 +5,35 @@ enum LockMode {
     case lock
     case fatigue(durationSeconds: Int, skippable: Bool)
     case test(durationSeconds: Int)
+    case force   // dipicu istri dari HP — lock sampai di-unlock dari HP juga
 
     var stateFilename: String {
         switch self {
         case .lock: return "state.json"
         case .fatigue: return "fatigue_state.json"
         case .test: return "test_state.json"
+        case .force: return "force_state.json"
         }
     }
 
     var skippable: Bool {
         if case .fatigue(_, let s) = self { return s }
         return false
+    }
+}
+
+/// File-based unlock signal — ditulis oleh control server (HP istri).
+enum UnlockSignal {
+    static let url: URL = FileManager.default
+        .homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/turublok/unlock_request", isDirectory: false)
+
+    static func isRequested() -> Bool {
+        FileManager.default.fileExists(atPath: url.path)
+    }
+
+    static func consume() {
+        try? FileManager.default.removeItem(at: url)
     }
 }
 
@@ -37,6 +54,9 @@ final class LockController: NSObject {
     func start() {
         installSignalHandlers()
 
+        // Konsumsi sisa unlock-request lama biar lock baru ga langsung mati.
+        UnlockSignal.consume()
+
         let cfg = LockConfig.current()
         switch mode {
         case .lock:
@@ -45,6 +65,9 @@ final class LockController: NSObject {
             timeGuard = TimeGuard(lockConfig: cfg, fixedDurationSeconds: seconds, stateFilename: mode.stateFilename)
         case .test(let seconds):
             timeGuard = TimeGuard(lockConfig: cfg, fixedDurationSeconds: seconds, stateFilename: mode.stateFilename)
+        case .force:
+            // Force lock: ga ada countdown window. Safety cap 12 jam biar ga stuck selamanya.
+            timeGuard = TimeGuard(lockConfig: cfg, fixedDurationSeconds: 12 * 3600, stateFilename: mode.stateFilename)
         }
 
         spawnWindows()
@@ -123,6 +146,13 @@ final class LockController: NSObject {
     }
 
     private func tick() {
+        // Unlock dari HP istri — berlaku di SEMUA mode (bedtime, fatigue, force).
+        if UnlockSignal.isRequested() {
+            Log.info("unlock requested from control server — unlocking")
+            UnlockSignal.consume()
+            gracefulExit()
+            return
+        }
         guard let guardian = timeGuard else { return }
         let shouldContinue = guardian.tick()
         if !shouldContinue {
