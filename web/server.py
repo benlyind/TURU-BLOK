@@ -31,6 +31,25 @@ SUPPORT = HOME / "Library/Application Support/turublok"
 SUPPORT.mkdir(parents=True, exist_ok=True, mode=0o700)
 
 PUBLIC_DIR = (Path(__file__).parent / "public").resolve()
+
+def _local_v6_prefixes():
+    """Ambil prefix /64 IPv6 global Mac → buat ngenalin device se-LAN via IPv6."""
+    nets = []
+    try:
+        out = subprocess.run(["ifconfig"], capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            s = line.strip()
+            if s.startswith("inet6 ") and "fe80" not in s:
+                addr = s.split()[1].split("%")[0]
+                try:
+                    nets.append(ipaddress.ip_network(addr + "/64", strict=False))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return nets
+
+LOCAL_V6_PREFIXES = _local_v6_prefixes()
 CONFIG_PATH = SUPPORT / "web_config.json"
 PAUSE_PATH = SUPPORT / "pause_until.txt"
 UNLOCK_PATH = SUPPORT / "unlock_request"
@@ -271,13 +290,19 @@ class Handler(BaseHTTPRequestHandler):
         return self.headers.get("X-Token", "")
 
     def _client_is_local(self):
-        # Cuma izinin koneksi dari LAN/private/loopback. Blok internet & sumber asing
-        # walau port ke-expose lewat VPN/misconfig.
+        # Izinin LAN/private/loopback. Blok internet.
+        # IPv6 global di-izinin kalau se-prefix /64 dgn Mac (= se-LAN, bukan internet).
         try:
             ip = ipaddress.ip_address(self.client_address[0])
-            return ip.is_loopback or ip.is_private or ip.is_link_local
         except Exception:
             return False
+        if ip.is_loopback or ip.is_private or ip.is_link_local:
+            return True
+        if ip.version == 6:
+            for net in LOCAL_V6_PREFIXES:
+                if ip in net:
+                    return True
+        return False
 
     def _body_json(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -290,6 +315,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if not self._client_is_local():
+            print(f"[BLOCKED non-local] {self.client_address[0]}", flush=True)
             return self._send_error_code(403)
         path = self.path.split("?")[0]
         if path == "/api/status":
@@ -313,6 +339,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self._client_is_local():
+            print(f"[BLOCKED non-local] {self.client_address[0]}", flush=True)
             return self._send_error_code(403)
         path = self.path.split("?")[0]
         body = self._body_json()
