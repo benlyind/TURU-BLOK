@@ -23,6 +23,12 @@ if [[ ! -x "$BIN_SRC" ]]; then
     exit 1
 fi
 
+# Video kucing disimpen di repo sebagai .zip (file mentah-nya gede). Extract kalau belum.
+if [[ ! -f "$ROOT/assets/cat.mov" && -f "$ROOT/assets/cat.mov.zip" ]]; then
+    echo "==> Extract video kucing dari cat.mov.zip"
+    ( cd "$ROOT/assets" && unzip -o -q cat.mov.zip )
+fi
+
 echo "==> Build .app bundle -> $APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 cp "$BIN_SRC" "$APP_BIN"
