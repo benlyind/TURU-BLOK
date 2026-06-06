@@ -66,8 +66,18 @@ final class LockController: NSObject {
         case .test(let seconds):
             timeGuard = TimeGuard(lockConfig: cfg, fixedDurationSeconds: seconds, stateFilename: mode.stateFilename)
         case .force:
-            // Force lock: ga ada countdown window. Safety cap 12 jam biar ga stuck selamanya.
-            timeGuard = TimeGuard(lockConfig: cfg, fixedDurationSeconds: 12 * 3600, stateFilename: mode.stateFilename)
+            // Force lock (dari HP istri). Auto-expire biar ga stuck kalau lupa unlock:
+            //  - di-lock pas jam tidur (23–07) → mati pas window selesai (07:00), "tidur sampai pagi"
+            //  - di-lock siang (di luar window) → cap 2 jam (anggap tidur siang)
+            let now = Date()
+            let forceSecs: Int
+            if cfg.isWithinLockWindow(now) {
+                forceSecs = max(60, Int(cfg.nextEndDate(from: now).timeIntervalSince(now)))
+            } else {
+                forceSecs = 2 * 3600
+            }
+            Log.info("force-lock duration = \(forceSecs)s (inWindow=\(cfg.isWithinLockWindow(now)))")
+            timeGuard = TimeGuard(lockConfig: cfg, fixedDurationSeconds: forceSecs, stateFilename: mode.stateFilename)
         }
 
         spawnWindows()
